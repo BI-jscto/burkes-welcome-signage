@@ -1,0 +1,26 @@
+{
+  "_note": "Embedded fallback schedule baked into the page for offline/USB use. When hosted, an external schedule.json overrides this.",
+  "visits": [
+    {
+      "company": "International Paper",
+      "domain": "internationalpaper.com",
+      "visitorName": "",
+      "subline": "PINE HILL",
+      "theme": "light",
+      "accentColor": "#006963",
+      "startsAt": "2026-07-09T00:00:00Z",
+      "expiresAt": "2026-07-10T05:00:00Z"
+    },
+    {
+      "company": "GAT Finishing Systems",
+      "domain": "gatfinishing.com",
+      "visitorName": "",
+      "subline": "",
+      "theme": "light",
+      "bg": "#ffffff",
+      "accentColor": "#004888",
+      "startsAt": "2026-07-23T00:00:00Z",
+      "expiresAt": "2026-07-24T05:00:00Z"
+    }
+  ]
+}

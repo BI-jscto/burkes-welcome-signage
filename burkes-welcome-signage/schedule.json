@@ -1,0 +1,13 @@
+{
+  "_comment": "Edit this file to change what shows on the screens. Add an object to 'visitors'; screens update within ~30s (no URL change, no RingCentral change). Times are LOCAL to the display device (set it to Central Time). 'company' required; 'logo','brandColor','note' optional.",
+  "visitors": [
+    {
+      "company": "Clayco",
+      "logo": "logos/clayco_notag.png",
+      "brandColor": "#EC3222",
+      "note": "",
+      "start": "2026-09-03T06:00:00",
+      "end": "2026-09-03T17:00:00"
+    }
+  ]
+}

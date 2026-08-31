@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Burkes Visitor Welcome Display</title>
+<style>
+  :root{
+    --bg:#141417; --fg:#EAEDF0; --accent:#CC2222; --dim:rgba(255,255,255,.16);
+    --grid:rgba(255,255,255,.035);
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;height:100%;background:var(--bg);overflow:hidden;cursor:none;
+    font-family:"Segoe UI",Arial,Helvetica,sans-serif;}
+  #screen{position:fixed;inset:0;background:var(--bg);transition:background .8s ease;}
+  /* faint blueprint grid */
+  .grid{position:absolute;inset:0;pointer-events:none;
+    background-image:
+      repeating-linear-gradient(0deg,var(--grid) 0 1px,transparent 1px 3.2vw),
+      repeating-linear-gradient(90deg,var(--grid) 0 1px,transparent 1px 3.2vw);}
+  /* top/bottom accent bars */
+  .bar{position:absolute;left:0;right:0;height:.7vh;background:var(--accent);}
+  .bar.top{top:0;} .bar.bot{bottom:0;}
+  .hair{position:absolute;left:0;right:0;height:1px;background:var(--dim);}
+  .hair.top{top:1.9vh;} .hair.bot{bottom:1.9vh;}
+  /* corner registration brackets */
+  .bk{position:absolute;width:5vh;height:5vh;border:.32vh solid var(--accent);}
+  .bk.tl{top:2.7vh;left:2.4vw;border-right:0;border-bottom:0;}
+  .bk.tr{top:2.7vh;right:2.4vw;border-left:0;border-bottom:0;}
+  .bk.bl{bottom:2.7vh;left:2.4vw;border-right:0;border-top:0;}
+  .bk.br{bottom:2.7vh;right:2.4vw;border-left:0;border-top:0;}
+  /* content */
+  .stage{position:absolute;inset:0;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;text-align:center;padding:6vh 8vw;}
+  .fade{opacity:0;transition:opacity .9s ease;}
+  .fade.show{opacity:1;}
+  .eyebrow{font-weight:700;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--fg);font-size:4vw;line-height:1;margin-bottom:3.2vh;}
+  .eyebrow .accent{color:var(--accent);}
+  .logo{display:flex;align-items:center;justify-content:center;
+    height:30vh;margin:1vh 0;}
+  .logo img{max-height:100%;max-width:74vw;object-fit:contain;
+    image-rendering:auto;}
+  .mono{height:26vh;width:26vh;border-radius:3vh;display:flex;align-items:center;
+    justify-content:center;background:var(--accent);color:#fff;font-weight:800;
+    font-size:12vh;letter-spacing:.02em;}
+  .subline{font-weight:700;letter-spacing:.34em;text-transform:uppercase;
+    color:var(--accent);font-size:2.5vw;margin-top:3.4vh;}
+  .visitor{font-weight:500;letter-spacing:.02em;color:var(--fg);opacity:.82;
+    font-size:1.7vw;margin-top:2.2vh;}
+  .tagline{font-weight:700;letter-spacing:.30em;text-transform:uppercase;
+    color:var(--fg);font-size:2vw;margin-top:4vh;}
+  .tagline b{color:var(--accent);font-weight:700;padding:0 .5em;}
+  /* subtle burn-in drift */
+  @keyframes drift{0%{transform:translate(0,0)}25%{transform:translate(.6vw,.4vh)}
+    50%{transform:translate(-.3vw,.7vh)}75%{transform:translate(-.6vw,-.4vh)}
+    100%{transform:translate(0,0)}}
+  .drift{animation:drift 180s ease-in-out infinite;}
+</style>
+</head>
+<body>
+<div id="screen">
+  <div class="grid"></div>
+  <div class="bar top"></div><div class="bar bot"></div>
+  <div class="hair top"></div><div class="hair bot"></div>
+  <div class="bk tl"></div><div class="bk tr"></div><div class="bk bl"></div><div class="bk br"></div>
+  <div class="stage drift"><div id="content" class="fade"></div></div>
+</div>
+
+<script>
+/* ============================================================
+   Burkes Visitor Welcome Display
+   Works offline from USB (embedded schedule) AND live (fetch).
+   ============================================================ */
+const CONFIG = {
+  scheduleUrl: "schedule.json",   // used only when hosted/online
+  pollMs: 15000,
+  burkes: {
+    name: "BURKES MECHANICAL",
+    tagline: ["SAFETY","QUALITY","PRODUCTIVITY"],
+    accent: "#CC2222",
+    logo: "__BURKES_LOGO__"
+  }
+};
+
+/* Baked-in logo library (offline). Key by domain. Add future visitors here. */
+const LOGO_LIB = {
+  "internationalpaper.com": "__IP_LOGO__",
+  "gatfinishing.com": "__GAT_LOGO__"
+};
+
+/* Embedded fallback schedule — drives the display with NO network (USB today). */
+const EMBEDDED_SCHEDULE = __SCHEDULE_JSON__;
+
+const $ = s => document.querySelector(s);
+const content = $("#content");
+const screen = $("#screen");
+
+function setTheme(theme, accent, bg){
+  const dark = theme !== "light";
+  const r = document.documentElement.style;
+  r.setProperty("--bg", bg || (dark ? "#141417" : "#f8f8f6"));
+  r.setProperty("--fg", dark ? "#EAEDF0" : "#15191e");
+  r.setProperty("--accent", accent);
+  r.setProperty("--dim", dark ? "rgba(255,255,255,.16)" : "rgba(20,25,30,.18)");
+  r.setProperty("--grid", dark ? "rgba(255,255,255,.035)" : "rgba(20,30,40,.05)");
+}
+
+function monogram(name, accent){
+  const parts = (name||"").trim().split(/\s+/).filter(Boolean);
+  let ini = parts.slice(0,2).map(w=>w[0]).join("");
+  if(!ini) ini = "?";
+  return `<div class="mono" style="background:${accent}">${ini.toUpperCase()}</div>`;
+}
+
+function resolveLogo(v){
+  if(v.logoUrl) return `<img src="${v.logoUrl}" alt="">`;
+  const lib = v.domain && LOGO_LIB[v.domain.toLowerCase()];
+  if(lib) return `<img src="${lib}" alt="">`;
+  return monogram(v.company, v.accentColor || "#888");
+}
+
+function renderWelcome(v){
+  setTheme(v.theme || "dark", v.accentColor || "#CC2222", v.bg);
+  let html = `<div class="eyebrow">BURKES <span class="accent">WELCOMES</span></div>`;
+  html += `<div class="logo">${resolveLogo(v)}</div>`;
+  if(v.subline) html += `<div class="subline">${v.subline}</div>`;
+  if(v.visitorName) html += `<div class="visitor">${v.visitorName}</div>`;
+  swap(html);
+}
+
+function renderStandby(){
+  const b = CONFIG.burkes;
+  setTheme("dark", b.accent);
+  let html = `<div class="logo">${b.logo?`<img src="${b.logo}" alt="">`:monogram(b.name,b.accent)}</div>`;
+  html += `<div class="tagline">${b.tagline.join(" <b>&middot;</b> ")}</div>`;
+  swap(html);
+}
+
+let lastKey = null;
+function swap(html){
+  const key = html.length + ":" + html.slice(0,40);
+  if(key === lastKey) return;      // no change -> don't re-flash
+  lastKey = key;
+  content.classList.remove("show");
+  setTimeout(()=>{ content.innerHTML = html; content.classList.add("show"); }, 250);
+}
+
+function pickActive(schedule){
+  const now = Date.now();
+  const visits = (schedule && schedule.visits) || [];
+  for(const v of visits){
+    const s = Date.parse(v.startsAt), e = Date.parse(v.expiresAt);
+    if(!isNaN(s) && !isNaN(e) && now >= s && now < e) return v;
+  }
+  return null;
+}
+
+/* Query-string test override, e.g.
+   ?company=International%20Paper&domain=internationalpaper.com&color=006963&theme=light&sub=PINE%20HILL */
+function queryVisit(){
+  const q = new URLSearchParams(location.search);
+  if(!q.get("company") && !q.get("domain")) return null;
+  return {
+    company: q.get("company") || "",
+    domain: q.get("domain") || "",
+    accentColor: q.get("color") ? "#"+q.get("color").replace(/^#/,"") : "#CC2222",
+    theme: q.get("theme") || "dark",
+    bg: q.get("bg") ? "#"+q.get("bg").replace(/^#/,"") : "",
+    subline: q.get("sub") || "",
+    visitorName: q.get("who") || "",
+    logoUrl: q.get("logo") || ""
+  };
+}
+
+let schedule = EMBEDDED_SCHEDULE;
+
+function tick(){
+  const forced = queryVisit();
+  const v = forced || pickActive(schedule);
+  if(v) renderWelcome(v); else renderStandby();
+}
+
+async function refreshSchedule(){
+  try{
+    const r = await fetch(CONFIG.scheduleUrl + "?t=" + Date.now(), {cache:"no-store"});
+    if(r.ok){ const j = await r.json(); if(j && j.visits) schedule = j; }
+  }catch(e){ /* offline / USB -> keep embedded schedule */ }
+}
+
+/* boot */
+tick();
+content.classList.add("show");
+refreshSchedule().then(tick);
+setInterval(async()=>{ await refreshSchedule(); tick(); }, CONFIG.pollMs);
+
+/* nightly reload keeps a long-running kiosk fresh */
+setInterval(()=>location.reload(), 6*60*60*1000);
+document.addEventListener("keydown",e=>{ if(e.key==="Escape") window.close(); });
+</script>
+</body>
+</html>
