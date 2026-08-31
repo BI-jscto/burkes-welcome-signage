@@ -1,3 +1,0 @@
-# Never cache the schedule so screens always get the latest within one poll (30s).
-/schedule.json
-  Cache-Control: no-store
