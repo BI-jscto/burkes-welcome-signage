@@ -7,7 +7,22 @@
       "brandColor": "#EC3222",
       "note": "",
       "start": "2026-09-01T06:00:00",
-      "end": "2026-09-01T17:00:00"
+      "end": "2026-09-01T08:00:00"
+    },
+    {
+      "company": "company": "RJ Mechanical",
+      "logo": "logos/rj.png",
+      "brandColor": "#10254D",
+      "start": "2026-09-01T08:00:00",
+      "end":   "2026-09-01T10:00:00"
+    },
+    {
+      "company": "Clayco",
+      "logo": "logos/clayco_notag.png",
+      "brandColor": "#EC3222",
+      "note": "",
+      "start": "2026-09-01T13:00:00",
+      "end": "2026-09-03T18:00:00"
     }
   ]
 }
