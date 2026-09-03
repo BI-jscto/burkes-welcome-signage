@@ -1,3 +1,10 @@
-# No build step — this is a plain static site. Publish the repo root as-is.
+# Plain static site + one serverless function (the admin form's save endpoint).
 [build]
   publish = "."
+
+[build.environment]
+  NODE_VERSION = "18"
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"

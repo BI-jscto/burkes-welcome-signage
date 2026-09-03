@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Burkes Visitor Welcome — Admin</title>
+<style>
+  :root{ --red:#C8102E; --ink:#15191e; --dim:#6b7075; --line:#e2e2e2; --bg:#f7f7f6; }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font-family:"Segoe UI",Arial,system-ui,sans-serif;line-height:1.45;}
+  header{background:#fff;border-bottom:3px solid var(--red);padding:18px 20px;}
+  header .kick{color:var(--red);font-weight:700;letter-spacing:.12em;font-size:12px;text-transform:uppercase;}
+  header h1{margin:2px 0 0;font-size:22px;}
+  .wrap{max-width:760px;margin:22px auto;padding:0 18px;}
+  .card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-bottom:20px;}
+  h2{font-size:16px;margin:0 0 12px;padding-bottom:8px;border-bottom:2px solid var(--red);}
+  label{display:block;font-weight:600;font-size:13px;margin:12px 0 4px;}
+  input,select,textarea{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:7px;
+       font:inherit;background:#fff;}
+  input[type=color]{padding:2px;height:40px;}
+  .row{display:flex;gap:14px;flex-wrap:wrap;}
+  .row>div{flex:1;min-width:180px;}
+  .hint{color:var(--dim);font-size:12px;margin-top:4px;}
+  button{background:var(--red);color:#fff;border:0;border-radius:7px;padding:11px 18px;
+       font:inherit;font-weight:700;cursor:pointer;margin-top:16px;}
+  button.ghost{background:#fff;color:var(--red);border:1px solid var(--red);padding:5px 12px;margin:0;font-size:13px;}
+  button:disabled{opacity:.5;cursor:default;}
+  .msg{margin-top:12px;padding:10px 12px;border-radius:7px;font-size:14px;display:none;}
+  .msg.ok{display:block;background:#e7f6ec;color:#1c6b39;border:1px solid #bfe6cd;}
+  .msg.err{display:block;background:#fdeaec;color:#a11223;border:1px solid #f4c3ca;}
+  table{width:100%;border-collapse:collapse;margin-top:4px;}
+  th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line);font-size:14px;vertical-align:top;}
+  th{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.04em;}
+  .swatch{display:inline-block;width:14px;height:14px;border-radius:3px;border:1px solid #0002;vertical-align:middle;margin-right:6px;}
+  .pw{max-width:320px;}
+</style>
+</head>
+<body>
+<header>
+  <div class="kick">Burkes Intelligence &amp; Engineering</div>
+  <h1>Visitor Welcome — Admin</h1>
+</header>
+
+<div class="wrap">
+
+  <div class="card">
+    <h2>Password</h2>
+    <div class="pw">
+      <input id="pw" type="password" placeholder="Enter the shared password" autocomplete="current-password">
+      <div class="hint">Needed to save changes. Remembered on this device until you close the browser.</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Add a visitor</h2>
+    <label for="company">Company *</label>
+    <input id="company" type="text" placeholder="e.g. Clayco" required>
+
+    <div class="row">
+      <div>
+        <label for="logo">Logo</label>
+        <select id="logo">
+          <option value="">None — show the company name</option>
+          <option value="logos/clayco_notag.png">Clayco (no tagline)</option>
+          <option value="logos/clayco.png">Clayco (with tagline)</option>
+          <option value="logos/gat.png">GAT Finishing Systems</option>
+          <option value="logos/rj.png">RJ Mechanical</option>
+          <option value="logos/isat.png">ISAT</option>
+          <option value="logos/ip.svg">International Paper</option>
+        </select>
+        <div class="hint">New company? Send the logo to Nick to add it here.</div>
+      </div>
+      <div style="max-width:160px;flex:0 0 160px;">
+        <label for="color">Brand color</label>
+        <input id="color" type="color" value="#C8102E">
+      </div>
+    </div>
+
+    <label for="note">Note (optional)</label>
+    <input id="note" type="text" placeholder="e.g. Plant tour, 2 pm">
+
+    <div class="row">
+      <div>
+        <label for="start">Show from</label>
+        <input id="start" type="datetime-local">
+      </div>
+      <div>
+        <label for="end">Show until</label>
+        <input id="end" type="datetime-local">
+      </div>
+    </div>
+    <div class="hint">Times are Central (the display's clock). Before/after this window the screen is black.</div>
+
+    <button id="addBtn">Add visitor</button>
+    <div id="addMsg" class="msg"></div>
+  </div>
+
+  <div class="card">
+    <h2>Scheduled visitors</h2>
+    <div id="listMsg" class="msg"></div>
+    <table id="tbl">
+      <thead><tr><th>Company</th><th>When</th><th></th></tr></thead>
+      <tbody id="rows"><tr><td colspan="3" class="hint">Loading…</td></tr></tbody>
+    </table>
+    <div class="hint" style="margin-top:10px;">After a change, the screens update within ~30–60 seconds (Netlify redeploys, then the TVs re-check).</div>
+  </div>
+
+</div>
+
+<script>
+const FN = "/.netlify/functions/update-schedule";
+const $ = id => document.getElementById(id);
+
+// remember password for the session
+$("pw").value = sessionStorage.getItem("bw_pw") || "";
+$("pw").addEventListener("input", () => sessionStorage.setItem("bw_pw", $("pw").value));
+
+// auto-fill brand color when a known logo is picked
+const LOGO_COLOR = {
+  "logos/clayco_notag.png":"#EC3222", "logos/clayco.png":"#EC3222",
+  "logos/gat.png":"#004888", "logos/rj.png":"#10254D",
+  "logos/isat.png":"#122454", "logos/ip.svg":"#006963"
+};
+$("logo").addEventListener("change", e => { if(LOGO_COLOR[e.target.value]) $("color").value = LOGO_COLOR[e.target.value]; });
+
+function show(el, kind, text){ el.className = "msg " + kind; el.textContent = text; }
+function fmt(dt){
+  if(!dt) return "—";
+  const d = new Date(dt);
+  return isNaN(d) ? dt : d.toLocaleString(undefined,{weekday:"short",month:"short",day:"numeric",hour:"numeric",minute:"2-digit"});
+}
+function secs(v){ return v && v.length === 16 ? v + ":00" : v; }   // datetime-local -> HH:MM:SS
+
+function renderList(visitors){
+  const rows = $("rows");
+  if(!visitors || !visitors.length){ rows.innerHTML = '<tr><td colspan="3" class="hint">No visitors scheduled.</td></tr>'; return; }
+  rows.innerHTML = "";
+  visitors.forEach(v => {
+    const tr = document.createElement("tr");
+    const c = v.brandColor ? '<span class="swatch" style="background:'+v.brandColor+'"></span>' : "";
+    tr.innerHTML = "<td>"+c+escapeHtml(v.company||"")+(v.note?'<div class="hint">'+escapeHtml(v.note)+"</div>":"")+"</td>"+
+                   "<td>"+fmt(v.start)+"<div class='hint'>to "+fmt(v.end)+"</div></td>"+
+                   "<td style='text-align:right'></td>";
+    const btn = document.createElement("button");
+    btn.className = "ghost"; btn.textContent = "Remove";
+    btn.onclick = () => removeVisitor(v, btn);
+    tr.lastElementChild.appendChild(btn);
+    rows.appendChild(tr);
+  });
+}
+function escapeHtml(s){ return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+async function loadList(){
+  try{
+    const r = await fetch("schedule.json?t="+Date.now(), {cache:"no-store"});
+    const d = await r.json();
+    renderList(d.visitors || []);
+  }catch(e){ show($("listMsg"),"err","Could not load the current list."); }
+}
+
+async function post(payload){
+  const r = await fetch(FN, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload)});
+  const d = await r.json().catch(()=>({error:"Unexpected server response."}));
+  if(!r.ok) throw new Error(d.error || ("Error "+r.status));
+  return d;
+}
+
+$("addBtn").onclick = async () => {
+  const pw = $("pw").value.trim();
+  if(!pw) return show($("addMsg"),"err","Enter the password first.");
+  const company = $("company").value.trim();
+  if(!company) return show($("addMsg"),"err","Company is required.");
+  const start = secs($("start").value), end = secs($("end").value);
+  if(start && end && start >= end) return show($("addMsg"),"err","“Show until” must be after “Show from”.");
+  const visitor = { company, logo:$("logo").value, brandColor:$("color").value, note:$("note").value.trim(), start, end };
+  $("addBtn").disabled = true; show($("addMsg"),"ok","Saving…");
+  try{
+    const d = await post({password:pw, action:"add", visitor});
+    show($("addMsg"),"ok","Added. Screens update within ~30–60 seconds.");
+    $("company").value=""; $("note").value="";
+    renderList(d.visitors);
+  }catch(e){ show($("addMsg"),"err",e.message); }
+  finally{ $("addBtn").disabled = false; }
+};
+
+async function removeVisitor(v, btn){
+  const pw = $("pw").value.trim();
+  if(!pw){ show($("listMsg"),"err","Enter the password first."); return; }
+  if(!confirm("Remove "+v.company+"?")) return;
+  btn.disabled = true;
+  try{
+    const d = await post({password:pw, action:"remove", match:{company:v.company, start:v.start, end:v.end}});
+    show($("listMsg"),"ok","Removed. Screens update within ~30–60 seconds.");
+    renderList(d.visitors);
+  }catch(e){ show($("listMsg"),"err",e.message); btn.disabled = false; }
+}
+
+loadList();
+</script>
+</body>
+</html>
