@@ -41,8 +41,9 @@
   .prevbar{display:flex;flex-wrap:wrap;gap:16px;align-items:center;padding:10px 12px;background:#fafafa;border-bottom:1px solid var(--line);font-size:13px;}
   .prevbar label{margin:0;display:inline-flex;align-items:center;gap:6px;font-weight:600;}
   .prevbar select{width:auto;padding:5px 8px;}
-  #prevStage{display:flex;align-items:center;justify-content:center;min-height:150px;padding:14px;}
-  #prevStage canvas{max-width:100%;max-height:220px;}
+  #prevStage{position:relative;display:flex;align-items:center;justify-content:center;min-height:150px;padding:14px;}
+  #prevStage canvas{max-width:100%;max-height:220px;cursor:crosshair;}
+  .sel{position:absolute;border:2px solid var(--red);background:rgba(200,16,46,.18);pointer-events:none;}
   .badge{font-weight:700;color:var(--red);}
 </style>
 </head>
@@ -72,12 +73,6 @@
         <label for="logo">Logo</label>
         <select id="logo">
           <option value="">None — show the company name</option>
-          <option value="logos/clayco_notag.png">Clayco (no tagline)</option>
-          <option value="logos/clayco.png">Clayco (with tagline)</option>
-          <option value="logos/gat.png">GAT Finishing Systems</option>
-          <option value="logos/rj.png">RJ Mechanical</option>
-          <option value="logos/isat.png">ISAT</option>
-          <option value="logos/ip.svg">International Paper</option>
         </select>
         <div class="hint">Pick an existing logo, or upload a new one below.</div>
       </div>
@@ -103,13 +98,19 @@
           </select>
         </label>
         <span>Detected: <span id="detTheme" class="badge">—</span></span>
+        <button type="button" class="ghost" id="resetLogo">Reset</button>
         <button type="button" class="ghost" id="clearFile">Use no upload</button>
       </div>
       <div id="prevStage"></div>
+      <div class="hint" style="padding:0 12px 12px;">Tip: <b>drag across the preview</b> to erase part of the logo
+        (e.g. a tagline the auto-trim missed). <b>Reset</b> starts over from the original file.</div>
     </div>
 
     <label for="note">Note (optional)</label>
     <input id="note" type="text" placeholder="e.g. Plant tour, 2 pm">
+    <label style="font-weight:400;margin-top:6px;display:inline-flex;align-items:center;gap:7px;">
+      <input id="noteShow" type="checkbox" style="width:auto;"> Show this note on the welcome screen
+    </label>
 
     <div class="row">
       <div>
@@ -146,13 +147,36 @@ const $ = id => document.getElementById(id);
 $("pw").value = sessionStorage.getItem("bw_pw") || "";
 $("pw").addEventListener("input", () => sessionStorage.setItem("bw_pw", $("pw").value));
 
-const LOGO_COLOR = {
-  "logos/clayco_notag.png":"#EC3222", "logos/clayco.png":"#EC3222",
-  "logos/gat.png":"#004888", "logos/rj.png":"#10254D",
-  "logos/isat.png":"#122454", "logos/ip.svg":"#006963"
-};
+// The dropdown is filled from logos.json (falls back to these built-ins if it can't load).
+const BUILTIN_LOGOS = [
+  {company:"Clayco (no tagline)",   logo:"logos/clayco_notag.png", brandColor:"#EC3222", theme:"light"},
+  {company:"Clayco (with tagline)", logo:"logos/clayco.png",       brandColor:"#EC3222", theme:"light"},
+  {company:"GAT Finishing Systems", logo:"logos/gat.png",          brandColor:"#004888", theme:"light"},
+  {company:"International Paper",    logo:"logos/ip.svg",           brandColor:"#006963", theme:"light"},
+  {company:"ISAT",                  logo:"logos/isat.png",         brandColor:"#122454", theme:"light"},
+  {company:"RJ Mechanical",         logo:"logos/rj.png",           brandColor:"#10254D", theme:"light"}
+];
+let logoData = {};   // logo path -> { brandColor, theme }
+async function loadLogos(){
+  let list = BUILTIN_LOGOS;
+  try{
+    const r = await fetch("logos.json?t="+Date.now(), {cache:"no-store"});
+    if(r.ok){ const j = await r.json(); if(Array.isArray(j.logos) && j.logos.length) list = j.logos; }
+  }catch(e){ /* fall back to built-ins */ }
+  const sel = $("logo");
+  while(sel.options.length > 1) sel.remove(1);          // keep the "None" option
+  logoData = {};
+  list.forEach(o => {
+    if(!o.logo) return;
+    const op = document.createElement("option");
+    op.value = o.logo; op.textContent = o.company || o.logo;
+    sel.appendChild(op);
+    logoData[o.logo] = { brandColor:o.brandColor||"", theme:o.theme||"light" };
+  });
+}
 $("logo").addEventListener("change", e => {
-  if(LOGO_COLOR[e.target.value]) $("color").value = LOGO_COLOR[e.target.value];
+  const d = logoData[e.target.value];
+  if(d && d.brandColor) $("color").value = d.brandColor;
 });
 
 function show(el, kind, text){ el.className = "msg " + kind; el.textContent = text; }
@@ -254,12 +278,11 @@ function finalTheme(){
 }
 function drawPreview(){
   if(!cleaned) return;
-  const th=finalTheme();
-  const stage=$("prevStage");
+  const th=finalTheme(), stage=$("prevStage");
   stage.style.background = th==="dark" ? "#15191e" : "#ffffff";
-  stage.innerHTML="";
-  stage.appendChild(cleaned.canvas);
-  $("detTheme").textContent = cleaned.theme + (finalTheme()!==cleaned.theme ? " (overridden → "+th+")" : "");
+  const old = stage.querySelector("canvas"); if(old) old.remove();
+  stage.insertBefore(cleaned.canvas, selDiv);            // keep the selection overlay on top
+  $("detTheme").textContent = cleaned.theme + (th!==cleaned.theme ? " (→ "+th+")" : "");
 }
 function reprocess(){
   if(!sourceImg) return;
@@ -281,7 +304,51 @@ $("bgMode").addEventListener("change", drawPreview);
 $("clearFile").addEventListener("click", clearUpload);
 function clearUpload(){
   sourceImg=null; cleaned=null; $("file").value="";
-  $("prev").classList.remove("show"); $("prevStage").innerHTML="";
+  $("prev").classList.remove("show");
+  const old=$("prevStage").querySelector("canvas"); if(old) old.remove();
+}
+
+/* ----- manual erase: drag across the preview to erase a region (e.g. a tagline) ----- */
+const selDiv = document.createElement("div"); selDiv.className="sel"; selDiv.style.display="none";
+$("prevStage").appendChild(selDiv);
+let erasing=false, ex0=0, ey0=0;
+function cm(){                                   // live canvas metrics (canvas is replaced on redraw)
+  const cv = cleaned && cleaned.canvas; if(!cv || !cv.parentNode) return null;
+  const cr = cv.getBoundingClientRect(), sr = $("prevStage").getBoundingClientRect();
+  return { cv, cr, offx:cr.left-sr.left, offy:cr.top-sr.top, sx:cv.width/cr.width, sy:cv.height/cr.height };
+}
+function drawSel(x0,y0,x1,y1){ const m=cm(); if(!m) return;
+  selDiv.style.left=(m.offx+Math.min(x0,x1))+"px"; selDiv.style.top=(m.offy+Math.min(y0,y1))+"px";
+  selDiv.style.width=Math.abs(x1-x0)+"px"; selDiv.style.height=Math.abs(y1-y0)+"px"; }
+$("prevStage").addEventListener("mousedown", e => {
+  const m=cm(); if(!m) return;
+  const x=e.clientX-m.cr.left, y=e.clientY-m.cr.top;
+  if(x<0||y<0||x>m.cr.width||y>m.cr.height) return;      // only start on the logo
+  erasing=true; ex0=x; ey0=y; drawSel(x,y,x,y); selDiv.style.display="block"; e.preventDefault();
+});
+window.addEventListener("mousemove", e => { if(!erasing) return; const m=cm(); if(!m) return;
+  drawSel(ex0, ey0, e.clientX-m.cr.left, e.clientY-m.cr.top); });
+window.addEventListener("mouseup", e => {
+  if(!erasing) return; erasing=false; selDiv.style.display="none";
+  const m=cm(); if(!m) return;
+  const x1=e.clientX-m.cr.left, y1=e.clientY-m.cr.top;
+  const a=Math.min(ex0,x1), b=Math.max(ex0,x1), c=Math.min(ey0,y1), d2=Math.max(ey0,y1);
+  if(b-a<3 || d2-c<3) return;
+  m.cv.getContext("2d").clearRect(a*m.sx, c*m.sy, (b-a)*m.sx, (d2-c)*m.sy);   // erase
+  cleaned.canvas = trimCanvas(m.cv);                                         // re-trim empty space
+  drawPreview();
+});
+$("resetLogo").addEventListener("click", reprocess);
+function trimCanvas(cv){
+  const w=cv.width, h=cv.height, d=cv.getContext("2d").getImageData(0,0,w,h).data;
+  let minx=w,miny=h,maxx=-1,maxy=-1;
+  for(let y=0;y<h;y++) for(let x=0;x<w;x++) if(d[(y*w+x)*4+3]>16){
+    if(x<minx)minx=x; if(x>maxx)maxx=x; if(y<miny)miny=y; if(y>maxy)maxy=y; }
+  if(maxx<0) return cv;
+  const nw=maxx-minx+1, nh=maxy-miny+1;
+  const out=document.createElement("canvas"); out.width=nw; out.height=nh;
+  out.getContext("2d").drawImage(cv, minx,miny,nw,nh, 0,0,nw,nh);
+  return out;
 }
 
 /* ---------------- list + save ---------------- */
@@ -325,7 +392,7 @@ $("addBtn").onclick = async () => {
   if(start && end && start >= end) return show($("addMsg"),"err","“Show until” must be after “Show from”.");
 
   const visitor = { company, logo:$("logo").value, brandColor:$("color").value,
-                    note:$("note").value.trim(), start, end };
+                    note:($("noteShow").checked ? $("note").value.trim() : ""), start, end };
   const payload = { password:pw, action:"add", visitor };
 
   if(cleaned){                                   // a fresh upload takes precedence
@@ -334,6 +401,9 @@ $("addBtn").onclick = async () => {
     payload.imageName = name;
     payload.image = cleaned.canvas.toDataURL("image/png").split(",")[1];   // raw base64
     visitor.logo = "logos/"+name+".png";
+  } else {
+    const d = logoData[$("logo").value];         // saved logo may carry a light/dark theme
+    if(d && d.theme) visitor.theme = d.theme;
   }
 
   $("addBtn").disabled = true; show($("addMsg"),"ok","Saving…");
@@ -358,6 +428,7 @@ async function removeVisitor(v, btn){
   }catch(e){ show($("listMsg"),"err",e.message); btn.disabled = false; }
 }
 
+loadLogos();
 loadList();
 </script>
 </body>

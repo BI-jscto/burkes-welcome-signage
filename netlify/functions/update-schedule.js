@@ -97,6 +97,34 @@ exports.handler = async (event) => {
         return resp(502, { error: "Could not reach GitHub to upload the logo." });
       }
       visitor.logo = path;
+
+      // register the logo so it shows in the admin dropdown next time (non-fatal)
+      try {
+        const lp = "logos.json";
+        let lsha, reg = { logos: [] };
+        const gr = await gh(`${contents(lp)}?ref=${encodeURIComponent(branch)}`);
+        if (gr.ok) {
+          const j = await gr.json(); lsha = j.sha;
+          try { reg = JSON.parse(Buffer.from(j.content, "base64").toString("utf8")); } catch {}
+        }
+        if (!Array.isArray(reg.logos)) reg.logos = [];
+        reg.logos = reg.logos.filter(x => x.logo !== path);          // replace any prior entry
+        reg.logos.push({
+          company: String(visitor.company).trim(),
+          logo: path,
+          brandColor: visitor.brandColor || "",
+          theme: visitor.theme === "dark" ? "dark" : "light"
+        });
+        reg.logos.sort((a, b) => String(a.company).localeCompare(String(b.company)));
+        await gh(contents(lp), {
+          method: "PUT",
+          body: JSON.stringify({
+            message: `signage: register ${imageName}`,
+            content: Buffer.from(JSON.stringify(reg, null, 2) + "\n", "utf8").toString("base64"),
+            sha: lsha, branch
+          })
+        });
+      } catch (e) { /* logo + visitor still saved; dropdown just won't refresh */ }
     }
 
     data.visitors.push(clean(visitor));
