@@ -1,11 +1,47 @@
 {
   "_comment": "Registry of available logos for the admin dropdown. The admin form reads this to list companies, and the upload function adds a new entry automatically when a logo is uploaded. Each entry: company (label), logo (path), brandColor, theme.",
   "logos": [
-    { "company": "Clayco (no tagline)",     "logo": "logos/clayco_notag.png", "brandColor": "#EC3222", "theme": "light" },
-    { "company": "Clayco (with tagline)",    "logo": "logos/clayco.png",       "brandColor": "#EC3222", "theme": "light" },
-    { "company": "GAT Finishing Systems",    "logo": "logos/gat.png",          "brandColor": "#004888", "theme": "light" },
-    { "company": "International Paper",       "logo": "logos/ip.svg",           "brandColor": "#006963", "theme": "light" },
-    { "company": "ISAT",                      "logo": "logos/isat.png",         "brandColor": "#122454", "theme": "light" },
-    { "company": "RJ Mechanical",             "logo": "logos/rj.png",           "brandColor": "#10254D", "theme": "light" }
+    {
+      "company": "Chemstation",
+      "logo": "logos/chemstation.png",
+      "brandColor": "#169590",
+      "theme": "light"
+    },
+    {
+      "company": "Clayco (no tagline)",
+      "logo": "logos/clayco_notag.png",
+      "brandColor": "#EC3222",
+      "theme": "light"
+    },
+    {
+      "company": "Clayco (with tagline)",
+      "logo": "logos/clayco.png",
+      "brandColor": "#EC3222",
+      "theme": "light"
+    },
+    {
+      "company": "GAT Finishing Systems",
+      "logo": "logos/gat.png",
+      "brandColor": "#004888",
+      "theme": "light"
+    },
+    {
+      "company": "International Paper",
+      "logo": "logos/ip.svg",
+      "brandColor": "#006963",
+      "theme": "light"
+    },
+    {
+      "company": "ISAT",
+      "logo": "logos/isat.png",
+      "brandColor": "#122454",
+      "theme": "light"
+    },
+    {
+      "company": "RJ Mechanical",
+      "logo": "logos/rj.png",
+      "brandColor": "#10254D",
+      "theme": "light"
+    }
   ]
 }
