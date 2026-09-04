@@ -19,6 +19,7 @@
   input,select,textarea{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:7px;
        font:inherit;background:#fff;}
   input[type=color]{padding:2px;height:40px;}
+  input[type=file]{padding:7px;background:#fafafa;}
   .row{display:flex;gap:14px;flex-wrap:wrap;}
   .row>div{flex:1;min-width:180px;}
   .hint{color:var(--dim);font-size:12px;margin-top:4px;}
@@ -34,6 +35,15 @@
   th{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.04em;}
   .swatch{display:inline-block;width:14px;height:14px;border-radius:3px;border:1px solid #0002;vertical-align:middle;margin-right:6px;}
   .pw{max-width:320px;}
+  /* upload / preview */
+  .prev{margin-top:10px;border:1px solid var(--line);border-radius:8px;overflow:hidden;display:none;}
+  .prev.show{display:block;}
+  .prevbar{display:flex;flex-wrap:wrap;gap:16px;align-items:center;padding:10px 12px;background:#fafafa;border-bottom:1px solid var(--line);font-size:13px;}
+  .prevbar label{margin:0;display:inline-flex;align-items:center;gap:6px;font-weight:600;}
+  .prevbar select{width:auto;padding:5px 8px;}
+  #prevStage{display:flex;align-items:center;justify-content:center;min-height:150px;padding:14px;}
+  #prevStage canvas{max-width:100%;max-height:220px;}
+  .badge{font-weight:700;color:var(--red);}
 </style>
 </head>
 <body>
@@ -69,12 +79,33 @@
           <option value="logos/isat.png">ISAT</option>
           <option value="logos/ip.svg">International Paper</option>
         </select>
-        <div class="hint">New company? Send the logo to Nick to add it here.</div>
+        <div class="hint">Pick an existing logo, or upload a new one below.</div>
       </div>
       <div style="max-width:160px;flex:0 0 160px;">
         <label for="color">Brand color</label>
         <input id="color" type="color" value="#C8102E">
       </div>
+    </div>
+
+    <label for="file">Upload a new logo</label>
+    <input id="file" type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml">
+    <div class="hint">It's auto-cleaned in your browser: background removed, trimmed, and the screen
+      background is set light or dark so the logo reads. Check the preview before saving.</div>
+
+    <div id="prev" class="prev">
+      <div class="prevbar">
+        <label><input id="doTrim" type="checkbox" checked> Trim tagline / extra line</label>
+        <label>Background:
+          <select id="bgMode">
+            <option value="auto">Auto</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
+        </label>
+        <span>Detected: <span id="detTheme" class="badge">—</span></span>
+        <button type="button" class="ghost" id="clearFile">Use no upload</button>
+      </div>
+      <div id="prevStage"></div>
     </div>
 
     <label for="note">Note (optional)</label>
@@ -112,17 +143,17 @@
 const FN = "/.netlify/functions/update-schedule";
 const $ = id => document.getElementById(id);
 
-// remember password for the session
 $("pw").value = sessionStorage.getItem("bw_pw") || "";
 $("pw").addEventListener("input", () => sessionStorage.setItem("bw_pw", $("pw").value));
 
-// auto-fill brand color when a known logo is picked
 const LOGO_COLOR = {
   "logos/clayco_notag.png":"#EC3222", "logos/clayco.png":"#EC3222",
   "logos/gat.png":"#004888", "logos/rj.png":"#10254D",
   "logos/isat.png":"#122454", "logos/ip.svg":"#006963"
 };
-$("logo").addEventListener("change", e => { if(LOGO_COLOR[e.target.value]) $("color").value = LOGO_COLOR[e.target.value]; });
+$("logo").addEventListener("change", e => {
+  if(LOGO_COLOR[e.target.value]) $("color").value = LOGO_COLOR[e.target.value];
+});
 
 function show(el, kind, text){ el.className = "msg " + kind; el.textContent = text; }
 function fmt(dt){
@@ -130,8 +161,130 @@ function fmt(dt){
   const d = new Date(dt);
   return isNaN(d) ? dt : d.toLocaleString(undefined,{weekday:"short",month:"short",day:"numeric",hour:"numeric",minute:"2-digit"});
 }
-function secs(v){ return v && v.length === 16 ? v + ":00" : v; }   // datetime-local -> HH:MM:SS
+function secs(v){ return v && v.length === 16 ? v + ":00" : v; }
+function slugify(s){ return String(s).toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"").slice(0,50); }
+function escapeHtml(s){ return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
 
+/* ---------------- logo upload + browser-side cleanup ---------------- */
+let sourceImg = null;      // the uploaded <img>
+let cleaned   = null;      // { canvas, theme, accent }
+
+function loadImage(file){
+  return new Promise((res, rej) => {
+    const fr = new FileReader();
+    fr.onerror = rej;
+    fr.onload = () => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = fr.result; };
+    fr.readAsDataURL(file);
+  });
+}
+
+/* Remove edge-connected background (any color), trim, optionally drop a small
+   trailing band (tagline), then pick a light/dark screen background and a brand
+   color. Returns { canvas (transparent PNG), theme, accent }. */
+function cleanupLogo(img, trimTagline){
+  const maxProc = 1600;
+  let w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+  const s = Math.min(1, maxProc / Math.max(w, h));
+  w = Math.max(1, Math.round(w*s)); h = Math.max(1, Math.round(h*s));
+  const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
+  const ctx = cv.getContext("2d", { willReadFrequently:true });
+  ctx.clearRect(0,0,w,h); ctx.drawImage(img,0,0,w,h);
+  const id = ctx.getImageData(0,0,w,h), d = id.data;
+
+  const br=d[0], bgc=d[1], bb=d[2], tol=42;
+  const seen = new Uint8Array(w*h), stack = [];
+  const isBg = i => { const p=i*4; if(d[p+3]<8) return true;
+    return Math.abs(d[p]-br)<=tol && Math.abs(d[p+1]-bgc)<=tol && Math.abs(d[p+2]-bb)<=tol; };
+  const seed = i => { if(!seen[i] && isBg(i)){ seen[i]=1; stack.push(i); } };
+  for(let x=0;x<w;x++){ seed(x); seed((h-1)*w + x); }
+  for(let y=0;y<h;y++){ seed(y*w); seed(y*w + w-1); }
+  while(stack.length){ const i=stack.pop(), x=i%w, y=(i/w)|0;
+    if(x>0) seed(i-1); if(x<w-1) seed(i+1); if(y>0) seed(i-w); if(y<h-1) seed(i+w); }
+  for(let i=0;i<w*h;i++) if(seen[i]) d[i*4+3]=0;
+
+  // content bbox + row counts
+  const rowCount = new Int32Array(h);
+  let minx=w, miny=h, maxx=-1, maxy=-1;
+  for(let y=0;y<h;y++){ let c=0;
+    for(let x=0;x<w;x++){ if(d[(y*w+x)*4+3]>16){ c++; if(x<minx)minx=x; if(x>maxx)maxx=x; if(y<miny)miny=y; if(y>maxy)maxy=y; } }
+    rowCount[y]=c; }
+  if(maxx<0){ return { canvas:cv, theme:"light", accent:null }; }
+
+  let topY=miny, botY=maxy;
+  if(trimTagline){
+    let maxc=0; for(let y=miny;y<=maxy;y++) if(rowCount[y]>maxc) maxc=rowCount[y];
+    const th = Math.max(1, maxc*0.02), gap = Math.max(2, Math.round(h*0.03));
+    const bands=[]; let st=null;
+    for(let y=miny;y<=maxy;y++){ const f=rowCount[y]>th;
+      if(f && st===null) st=y; else if(!f && st!==null){ bands.push([st,y]); st=null; } }
+    if(st!==null) bands.push([st, maxy+1]);
+    const merged=[]; for(const b of bands){
+      if(merged.length && b[0]-merged[merged.length-1][1] < gap) merged[merged.length-1][1]=b[1];
+      else merged.push([b[0],b[1]]); }
+    if(merged.length>=2){
+      let main=0; for(const b of merged) main=Math.max(main,b[1]-b[0]);
+      while(merged.length>=2 && (merged[merged.length-1][1]-merged[merged.length-1][0]) < 0.55*main) merged.pop();
+      topY=merged[0][0]; botY=merged[merged.length-1][1]-1;
+      minx=w; maxx=-1;
+      for(let y=topY;y<=botY;y++) for(let x=0;x<w;x++) if(d[(y*w+x)*4+3]>16){ if(x<minx)minx=x; if(x>maxx)maxx=x; }
+    }
+  }
+
+  // theme + accent over the kept region
+  let vis=0, tot=0, ar=0, ag=0, ab=0, an=0;
+  for(let y=topY;y<=botY;y++) for(let x=minx;x<=maxx;x++){ const p=(y*w+x)*4;
+    if(d[p+3]>40){ const r=d[p],g=d[p+1],b=d[p+2];
+      const lum=0.299*r+0.587*g+0.114*b, sat=Math.max(r,g,b)-Math.min(r,g,b);
+      tot++; if(lum<180||sat>60) vis++;
+      if(sat>60){ ar+=r; ag+=g; ab+=b; an++; } } }
+  const theme  = (tot>0 && vis/tot>0.12) ? "light" : "dark";
+  const accent = an>0 ? "#"+[ar,ag,ab].map(v=>Math.round(v/an).toString(16).padStart(2,"0")).join("") : null;
+
+  // crop to output, cap width 1400
+  const cw=maxx-minx+1, ch=botY-topY+1, cap=1400, os=Math.min(1,cap/cw);
+  const out=document.createElement("canvas");
+  out.width=Math.max(1,Math.round(cw*os)); out.height=Math.max(1,Math.round(ch*os));
+  out.getContext("2d").drawImage(cv, minx,topY,cw,ch, 0,0,out.width,out.height);
+  return { canvas:out, theme, accent };
+}
+
+function finalTheme(){
+  const m=$("bgMode").value;
+  return m==="auto" ? (cleaned?cleaned.theme:"light") : m;
+}
+function drawPreview(){
+  if(!cleaned) return;
+  const th=finalTheme();
+  const stage=$("prevStage");
+  stage.style.background = th==="dark" ? "#15191e" : "#ffffff";
+  stage.innerHTML="";
+  stage.appendChild(cleaned.canvas);
+  $("detTheme").textContent = cleaned.theme + (finalTheme()!==cleaned.theme ? " (overridden → "+th+")" : "");
+}
+function reprocess(){
+  if(!sourceImg) return;
+  cleaned = cleanupLogo(sourceImg, $("doTrim").checked);
+  if(cleaned.accent) $("color").value = cleaned.accent;   // sampled brand color
+  drawPreview();
+}
+$("file").addEventListener("change", async e => {
+  const f = e.target.files[0];
+  if(!f){ clearUpload(); return; }
+  try{
+    sourceImg = await loadImage(f);
+    reprocess();
+    $("prev").classList.add("show");
+  }catch(err){ show($("addMsg"),"err","Couldn't read that image file."); clearUpload(); }
+});
+$("doTrim").addEventListener("change", reprocess);
+$("bgMode").addEventListener("change", drawPreview);
+$("clearFile").addEventListener("click", clearUpload);
+function clearUpload(){
+  sourceImg=null; cleaned=null; $("file").value="";
+  $("prev").classList.remove("show"); $("prevStage").innerHTML="";
+}
+
+/* ---------------- list + save ---------------- */
 function renderList(visitors){
   const rows = $("rows");
   if(!visitors || !visitors.length){ rows.innerHTML = '<tr><td colspan="3" class="hint">No visitors scheduled.</td></tr>'; return; }
@@ -149,8 +302,6 @@ function renderList(visitors){
     rows.appendChild(tr);
   });
 }
-function escapeHtml(s){ return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
-
 async function loadList(){
   try{
     const r = await fetch("schedule.json?t="+Date.now(), {cache:"no-store"});
@@ -158,7 +309,6 @@ async function loadList(){
     renderList(d.visitors || []);
   }catch(e){ show($("listMsg"),"err","Could not load the current list."); }
 }
-
 async function post(payload){
   const r = await fetch(FN, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload)});
   const d = await r.json().catch(()=>({error:"Unexpected server response."}));
@@ -173,12 +323,24 @@ $("addBtn").onclick = async () => {
   if(!company) return show($("addMsg"),"err","Company is required.");
   const start = secs($("start").value), end = secs($("end").value);
   if(start && end && start >= end) return show($("addMsg"),"err","“Show until” must be after “Show from”.");
-  const visitor = { company, logo:$("logo").value, brandColor:$("color").value, note:$("note").value.trim(), start, end };
+
+  const visitor = { company, logo:$("logo").value, brandColor:$("color").value,
+                    note:$("note").value.trim(), start, end };
+  const payload = { password:pw, action:"add", visitor };
+
+  if(cleaned){                                   // a fresh upload takes precedence
+    visitor.theme = finalTheme();
+    const name = slugify(company) || ("logo-"+Date.now());
+    payload.imageName = name;
+    payload.image = cleaned.canvas.toDataURL("image/png").split(",")[1];   // raw base64
+    visitor.logo = "logos/"+name+".png";
+  }
+
   $("addBtn").disabled = true; show($("addMsg"),"ok","Saving…");
   try{
-    const d = await post({password:pw, action:"add", visitor});
+    const d = await post(payload);
     show($("addMsg"),"ok","Added. Screens update within ~30–60 seconds.");
-    $("company").value=""; $("note").value="";
+    $("company").value=""; $("note").value=""; clearUpload();
     renderList(d.visitors);
   }catch(e){ show($("addMsg"),"err",e.message); }
   finally{ $("addBtn").disabled = false; }

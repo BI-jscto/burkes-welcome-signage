@@ -35,7 +35,8 @@
   .bk.br{bottom:2.6vh;right:2.4vw;border-left:0;border-top:0;}
 
   .content{position:absolute;inset:0;display:flex;flex-direction:column;
-           align-items:center;justify-content:center;text-align:center;padding:8vh 8vw;}
+           align-items:center;justify-content:center;text-align:center;padding:8vh 8vw;
+           color:var(--ink);}
   .eyebrow{font-weight:700;letter-spacing:.13em;text-transform:uppercase;
            font-size:3.1vw;line-height:1;margin-bottom:4vh;}
   .eyebrow .accent{color:var(--accent);}
@@ -115,6 +116,10 @@ function buildScene(v){
   const el = document.createElement("div");
   el.className = "scene";
   el.style.setProperty("--accent", v.brandColor || CONFIG.defaultAccent);
+  const dark = v.theme === "dark";
+  el.style.setProperty("--bg",  dark ? "#15191e" : "#ffffff");
+  el.style.setProperty("--ink", dark ? "#f2f4f6" : "#15191e");
+  el.style.setProperty("--dim", dark ? "#aab2b8" : "#6b7075");
   frame(el);
 
   const content = document.createElement("div");
@@ -177,7 +182,7 @@ function render(v){
     document.body.style.background = "#000";
     return;
   }
-  document.body.style.background = "var(--bg)";
+  document.body.style.background = (v.theme === "dark") ? "#15191e" : "#ffffff";
   const incoming = buildScene(v);
   stage.appendChild(incoming);
   fitCompany(incoming);
@@ -225,6 +230,7 @@ function queryVisit(){
     company,
     logo:       q.get("logo") || "",
     brandColor: q.get("color") ? "#" + q.get("color").replace(/^#/, "") : "",
+    theme:      q.get("theme") || "",
     note:       q.get("note") || "",
     start:      q.get("start") || "",
     end:        q.get("end")   || ""

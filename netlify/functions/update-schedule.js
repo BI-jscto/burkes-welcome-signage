@@ -14,6 +14,7 @@ function clean(v) {
   const out = { company: String(v.company || "").trim() };
   if (v.logo) out.logo = String(v.logo);
   if (v.brandColor) out.brandColor = String(v.brandColor);
+  if (v.theme === "dark" || v.theme === "light") out.theme = v.theme;
   out.note = v.note ? String(v.note) : "";
   if (v.start) out.start = String(v.start);
   if (v.end) out.end = String(v.end);
@@ -27,7 +28,7 @@ exports.handler = async (event) => {
   try { body = JSON.parse(event.body || "{}"); }
   catch { return resp(400, { error: "Bad request body" }); }
 
-  const { password, action, visitor, match } = body;
+  const { password, action, visitor, match, image, imageName } = body;
   if (!process.env.EDIT_PASSWORD || password !== process.env.EDIT_PASSWORD)
     return resp(401, { error: "Wrong password." });
 
@@ -37,7 +38,8 @@ exports.handler = async (event) => {
   if (!token || !repo)
     return resp(500, { error: "Server not configured: set GITHUB_TOKEN and GITHUB_REPO in Netlify." });
 
-  const api = `https://api.github.com/repos/${repo}/contents/schedule.json`;
+  const contents = (path) => `https://api.github.com/repos/${repo}/contents/${path}`;
+  const api = contents("schedule.json");
   const gh = (url, opts = {}) => fetch(url, {
     ...opts,
     headers: {
@@ -68,6 +70,35 @@ exports.handler = async (event) => {
   if (action === "add") {
     if (!visitor || !String(visitor.company || "").trim())
       return resp(400, { error: "Company is required." });
+
+    // Optional: a freshly-uploaded, already-cleaned logo (base64 PNG). Commit it to
+    // logos/<imageName>.png first, then point the visitor at it.
+    if (image && imageName) {
+      if (!/^[a-z0-9][a-z0-9-]{0,59}$/.test(imageName))
+        return resp(400, { error: "Bad logo name." });
+      if (image.length > 4_000_000)
+        return resp(400, { error: "Logo image is too large." });
+      const path = `logos/${imageName}.png`;
+      let sha;
+      try {
+        const g = await gh(`${contents(path)}?ref=${encodeURIComponent(branch)}`);
+        if (g.ok) sha = (await g.json()).sha;   // overwrite if it already exists
+      } catch (e) { /* treat as new file */ }
+      try {
+        const put = await gh(contents(path), {
+          method: "PUT",
+          body: JSON.stringify({ message: `signage: logo ${imageName}`, content: image, sha, branch })
+        });
+        if (!put.ok) {
+          const t = await put.text();
+          return resp(502, { error: `Logo upload failed (GitHub ${put.status}). ${t.slice(0, 140)}` });
+        }
+      } catch (e) {
+        return resp(502, { error: "Could not reach GitHub to upload the logo." });
+      }
+      visitor.logo = path;
+    }
+
     data.visitors.push(clean(visitor));
     msg = `signage: add ${clean(visitor).company}`;
   } else if (action === "remove") {
